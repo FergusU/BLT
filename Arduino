@@ -1,0 +1,197 @@
+#include <SPI.h>
+#include <SD.h>
+#include <Wire.h>
+#include "RTClib.h"
+
+
+#define LOG_INTERVAL  10000 // mills between entries (reduce to take more/faster data)
+#define ECHO_TO_SERIAL   1 // echo data to serial port
+#define WAIT_TO_START    0 // Wait for serial input in setup()
+
+
+
+
+RTC_DS1307 RTC; 
+const int chipSelect = 10;
+File logfile;     
+
+void error(char *str)
+{
+  Serial.print("error: ");
+  Serial.println(str);
+  
+  while(1);
+}
+
+
+void dateTime(uint16_t* date, uint16_t* time) {
+  DateTime now = RTC.now();
+
+  // return date using FAT_DATE macro to format fields
+  *date = FAT_DATE(now.year(), now.month(), now.day());
+
+  // return time using FAT_TIME macro to format fields
+  *time = FAT_TIME(now.hour(), now.minute(), now.second());
+};
+
+void setup(void)
+{
+  Serial.begin(9600);
+  Serial.println();
+  
+
+#if WAIT_TO_START
+  Serial.println("Type any character to start");
+  while (!Serial.available());
+#endif //WAIT_TO_START
+
+// initialize the SD card
+  Serial.print("Initializing SD card...");
+  pinMode(10, OUTPUT);
+  
+// see if the card is present and can be initialized:
+  if (!SD.begin(chipSelect)) {
+    error("Card failed, or not present");
+  }
+  Serial.println("card initialized.");
+
+  
+// create a new file
+  char filename[] = "LOGGER00.CSV";
+
+  for (uint8_t i = 0; i < 100; i++) {
+    filename[6] = i/10 + '0';
+    filename[7] = i%10 + '0';
+    if (! SD.exists(filename)) {
+      // only open a new file if it doesn't exist
+      SdFile::dateTimeCallback(dateTime);
+      logfile = SD.open(filename, FILE_WRITE); 
+      break;  // leave the loop!
+    }
+   
+  }
+  
+  if (! logfile) {
+    error("couldnt create file");
+  }
+  
+  Serial.print("Logging to: ");
+  Serial.println(filename);
+
+ 
+  
+  
+// connect to RTC (Real Time Clock)
+  Wire.begin();  
+  if (!RTC.begin()) {
+    logfile.println("RTC failed");
+#if ECHO_TO_SERIAL
+    Serial.println("RTC failed");
+#endif 
+  }
+
+// TO SET THE TIME for the first time uncomment the below RTC.adjust line and set the RTC with an explicit date & time, 
+//for example to set 2021 March 24 13:57:00 use the format 2021, 3, 24, 13, 57, 0  
+
+RTC.adjust(DateTime(2021, 4, 28, 11, 35, 0));     
+
+
+
+// print headers  
+  logfile.println("Date,Time,Status");    
+#if ECHO_TO_SERIAL
+  Serial.println("Date,        Time,      Status");
+#endif 
+}
+
+
+// main loop
+void loop(void)
+{
+
+delay(LOG_INTERVAL);
+ 
+
+  DateTime now;
+  
+  now = RTC.now();      // fetch the time
+ 
+  logfile.print(now.year(), DEC);
+  logfile.print("/");
+  logfile.print(now.month(), DEC);
+  logfile.print("/");
+  logfile.print(now.day(), DEC);
+  logfile.print(", ");
+  logfile.print(now.hour(), DEC);
+  logfile.print(":");
+  logfile.print(now.minute(), DEC);
+  logfile.print(":");
+  logfile.print(now.second(), DEC);
+ 
+#if ECHO_TO_SERIAL
+
+  Serial.print(now.year(), DEC);
+  Serial.print("/");
+  Serial.print(now.month(), DEC);
+  Serial.print("/");
+  Serial.print(now.day(), DEC);
+  Serial.print(", ");
+  Serial.print(now.hour(), DEC);
+  Serial.print(":");
+  Serial.print(now.minute(), DEC);
+  Serial.print(":");
+  Serial.print(now.second(), DEC);
+ 
+#endif //ECHO_TO_SERIAL
+
+
+
+
+
+
+//log sensor reading   use pin DIGITAL PIN 5 as input
+
+int sensor_status = digitalRead(5);
+
+  if(sensor_status==HIGH){
+      logfile.print(", ");    
+      logfile.print("Lights ON");               
+      logfile.print(", ");    
+  
+     #if ECHO_TO_SERIAL
+        Serial.print(", ");    
+        Serial.print("Lights ON");
+        Serial.print(", ");    
+     #endif //ECHO_TO_SERIAL
+
+  } else {
+
+       logfile.print(", ");    
+       logfile.print("Lights OFF");
+       logfile.print(", ");    
+  
+  #if ECHO_TO_SERIAL
+        Serial.print(", ");    
+        Serial.print("Lights OFF");
+        Serial.print(", ");    
+  #endif //ECHO_TO_SERIAL
+
+    
+  }
+
+
+
+  logfile.println();
+#if ECHO_TO_SERIAL
+  Serial.println();
+#endif // ECHO_TO_SERIAL
+
+  
+
+logfile.flush();   // write to SD card
+
+
+
+
+
+}
